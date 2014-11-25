@@ -408,7 +408,7 @@ class DockerManager:
                 if len(parts) == 2:
                     self.volumes[parts[1]] = {}
                     self.binds[parts[0]] = parts[1]
-                # with bind mode 
+                # with bind mode
                 elif len(parts) == 3:
                     if parts[2] not in ['ro', 'rw']:
                         self.module.fail_json(msg='bind mode needs to either be "ro" or "rw"')
@@ -593,6 +593,13 @@ class DockerManager:
                 running.append(i)
 
         return running
+
+    def get_existing_images(self, image, tag):
+        for image_details in self.client.images():
+            for repo_tag in image_details['RepoTags']:
+                existing_image, existing_tag = get_split_image_tag(repo_tag)
+                if existing_image == image and existing_tag == tag:
+                    yield image_details
 
     def create_containers(self, count=1):
         params = {'image':        self.module.params.get('image'),
@@ -780,9 +787,14 @@ def main():
                         existing_container = deployed_container
                         break
 
+                existing_image = None
+                for image in manager.get_existing_images(*get_split_image_tag(image)):
+                    existing_image = image
+                    break
+
                 # the named container is running, but with a
                 # different image or tag, so we stop it first
-                if existing_container and existing_container.get('Config', dict()).get('Image') != image:
+                if existing_container and existing_image and existing_container.get('Image') != existing_image.get('Id'):
                     manager.stop_containers([existing_container])
                     manager.remove_containers([existing_container])
                     running_containers = manager.get_running_containers()
